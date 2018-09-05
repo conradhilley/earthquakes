@@ -1,3 +1,8 @@
+"""
+Purpose: Config file functions
+Author: Conrad Hilley (conradhilley@gmail.com)
+"""
+
 from configparser import ConfigParser
 
 

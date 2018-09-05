@@ -1,3 +1,9 @@
+"""
+Purpose: Geometry based functions
+Author: Conrad Hilley (conradhilley@gmail.com)
+"""
+
+#TODO choose standard geometry library, shapely, ogr
 
 def return_antipode(latitude, longitude):
     """Return antipode latitude and longitude

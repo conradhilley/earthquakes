@@ -1,7 +1,8 @@
 """
-Purpose: Postgres helper methods
+Purpose: Postgres Database update and helper functions
 Author: Conrad Hilley (conradhilley@gmail.com)
 """
+
 from config import config
 import json
 import psycopg2
@@ -49,7 +50,7 @@ def update_usgs_data(table='earthquakes'):
             quake['properties']['longitude'] = \
                 quake['geometry']['coordinates'][0]
 
-            quake['properties']['latitude']= \
+            quake['properties']['latitude'] = \
                 quake['geometry']['coordinates'][1]
 
             # Add properties to earthquakes table
