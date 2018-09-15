@@ -3,10 +3,15 @@ Purpose: Postgres Database update and helper functions
 Author: Conrad Hilley (conradhilley@gmail.com)
 """
 
+# TODO create table/cursor classes and add common commands as methods
+# TODO build base cursor class
+
 from config import config
 import json
 import psycopg2
+import psycopg2.extras
 import usgs
+
 
 # Commands used when updating gdb
 UPDATE_CMDS = {'update_point_geom':
@@ -29,8 +34,8 @@ SQL_CMDS = {'estimate_row_count':
 
 
 class PostgresDB(object):
-    def __init__(self, config_file='database.ini'):
-        self.params = config(config_file=config_file, section='postgresql')
+    def __init__(self, config_file='database.ini', section='postgresql'):
+        self.params = config(config_file=config_file, section=section)
         self.conn = None
 
     def execute(self, sql):
@@ -50,6 +55,76 @@ class PostgresDB(object):
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.conn:
             self.conn.close()
+
+
+class SearchCursor(object):
+
+    def __init__(self, conn, table, columns=(), query=None, chunk_size=100000):
+        self.chunk_size = chunk_size
+        self.cursor = conn.cursor(
+                cursor_factory=psycopg2.extras.NamedTupleCursor)
+
+        # table and column validation
+        self.table = table
+        self.search_cols = columns
+        self.avail_cols = self._columns()
+
+        # verify column type and presence
+        if self.search_cols:
+
+            if isinstance(self.search_cols, str):
+                self.search_cols = (self.search_cols, )
+
+            for col in self.search_cols:
+                if col not in self.avail_cols:
+                    raise KeyError('Column ({}) not in {}'.format(col,
+                                                                  self.table))
+        else:
+            self.search_cols = ('*', )
+
+        # build sql
+        self.sql = """SELECT {cols} from {table};""".format(
+                cols=', '.join(map(str, self.search_cols)),
+                table=self.table)
+
+        # add query
+        self.query = query
+        if self.query:
+            self.sql = '{sql} WHERE {query}'.format(sql=self.sql,
+                                                    query=self.query)
+
+    def _columns(self):
+        try:
+            self.cursor.execute("SELECT * FROM {table} LIMIT 0".format(
+                    table=self.table))
+            return [desc[0] for desc in self.cursor.description]
+        except:
+            raise KeyError('Table ({}) not in database'.format(self.table))
+
+    def __iter__(self):
+        while True:
+            self.records = self.cursor.fetchmany(self.chunk_size)
+            if not self.records:
+                break
+            for rec in self.records:
+                if self.search_cols and self.search_cols != ('*', ):
+                    rec_dict = rec._asdict()
+                    yield [rec_dict[c] for c in self.search_cols]
+                else:
+                    yield rec
+
+    def __enter__(self):
+        try:
+            self.cursor.execute(self.sql)
+            self.records = None
+        except ConnectionError('Invalid cursor parameters'):
+            pass
+        finally:
+            return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.cursor:
+            self.cursor.close()
 
 
 def update_usgs_data(table='earthquakes'):
@@ -106,15 +181,15 @@ def update_usgs_data(table='earthquakes'):
 
 
 def main():
-
     print('Reading data from USGS, inserting new records')
     update_usgs_data()
 
     for cmd, sql in UPDATE_CMDS.items():
         print('\n    - {}'.format(cmd))
         with PostgresDB() as db:
-            db.execute(sql.format(table='earthquakes'))
-            db.conn.commit()
+            with db.cursor as cursor:
+                cursor.execute(sql.format(table='earthquakes'))
+                db.conn.commit()
 
 
 if __name__ == '__main__':
