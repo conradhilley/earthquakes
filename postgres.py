@@ -59,7 +59,9 @@ class PostgresDB(object):
 
 class SearchCursor(object):
 
-    def __init__(self, conn, table, columns=(), query=None, chunk_size=100000):
+    def __init__(self, conn, table, columns=(), query=None, chunk_size=100000,
+                 as_dict=False):
+        self.as_dict = as_dict
         self.chunk_size = chunk_size
         self.cursor = conn.cursor(
                 cursor_factory=psycopg2.extras.NamedTupleCursor)
@@ -83,15 +85,17 @@ class SearchCursor(object):
             self.search_cols = ('*', )
 
         # build sql
-        self.sql = """SELECT {cols} from {table};""".format(
+        self.sql = """SELECT {cols} from {table}""".format(
                 cols=', '.join(map(str, self.search_cols)),
                 table=self.table)
 
         # add query
         self.query = query
         if self.query:
-            self.sql = '{sql} WHERE {query}'.format(sql=self.sql,
+            self.sql = '{sql} WHERE {query};'.format(sql=self.sql,
                                                     query=self.query)
+        else:
+            self.sql += ';'
 
     def _columns(self):
         try:
@@ -107,11 +111,22 @@ class SearchCursor(object):
             if not self.records:
                 break
             for rec in self.records:
-                if self.search_cols and self.search_cols != ('*', ):
-                    rec_dict = rec._asdict()
-                    yield [rec_dict[c] for c in self.search_cols]
+
+                # If all records yield as dict or named tuple
+                if self.search_cols == ('*', ):
+                    if self.as_dict:
+                        yield rec._asdict()
+                    else:
+                        yield rec
                 else:
-                    yield rec
+                    # Will need dict for all other access methods
+                    rec_dict = rec._asdict()
+
+                    if self.as_dict:
+                        yield  rec_dict
+                    else:
+                        yield tuple([rec_dict[c] for c in self.search_cols])
+
 
     def __enter__(self):
         try:
